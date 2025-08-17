@@ -1,81 +1,52 @@
 # Architecture Overview
 
-## Project Structure
+This document outlines the architecture of the **Keycloak Kafka Bridge**, a provider designed to forward events from a Keycloak instance to a Kafka topic.
 
-The `keycloak-nextcloud-provisioner` project is structured to facilitate the integration of Keycloak with Nextcloud for user and tenant provisioning. The main components of the project are organized as follows:
+## Core Components
 
-```
-keycloak-nextcloud-provisioner
-├── build.gradle.kts          # Gradle build configuration
-├── settings.gradle.kts       # Gradle settings
-├── gradle.properties          # Gradle properties
-├── README.md                 # Project documentation
-├── Dockerfile                 # Docker image configuration
-├── LICENSE                    # Licensing information
-├── .env.example               # Example environment variables
-├── config                     # Application configuration files
-│   └── application.conf       # Configuration settings
-├── src                        # Source code
-│   ├── main                   # Main application code
-│   │   ├── kotlin             # Kotlin source files
-│   │   │   └── com
-│   │   │       └── example
-│   │   │           └── keycloak
-│   │   │               ├── NextcloudEventListenerProvider.kt
-│   │   │               ├── NextcloudEventListenerProviderFactory.kt
-│   │   │               ├── NextcloudProvisionService.kt
-│   │   │               ├── TenantProvisionService.kt
-│   │   │               ├── KeycloakAdminClient.kt
-│   │   │               ├── NextcloudClient.kt
-│   │   │               ├── model
-│   │   │               │   ├── NextcloudUserRequest.kt
-│   │   │               │   └── TenantMetadata.kt
-│   │   │               ├── config
-│   │   │               │   └── ProvisionerConfig.kt
-│   │   │               └── util
-│   │   │                   └── Logging.kt
-│   │   └── resources         # Resource files
-│   │       ├── META-INF
-│   │       │   └── services
-│   │       │       └── org.keycloak.events.EventListenerProviderFactory
-│   │       └── logback.xml   # Logging configuration
-│   └── test                  # Test code
-│       └── kotlin            # Kotlin test files
-│           └── com
-│               └── example
-│                   └── keycloak
-│                       ├── NextcloudProvisionServiceTest.kt
-│                       └── NextcloudClientTest.kt
-├── scripts                   # Scripts for running and building
-│   ├── run-local.sh          # Local run script
-│   └── build.sh              # Build script
-└── docs                      # Documentation
-    ├── ARCHITECTURE.md       # Architecture documentation
-    └── NEXTCLOUD_API_NOTES.md # Nextcloud API notes
-```
+The project is a standard Maven-based Kotlin application, intended to be packaged as a JAR and deployed as a Keycloak provider.
 
-## Key Components
+1.  **`KafkaEventListenerProvider`**:
+    *   This is the primary entry point for the provider.
+    *   It implements Keycloak's `EventListenerProvider` interface.
+    *   Its `onEvent` method is triggered by Keycloak whenever a registered event (e.g., user registration) occurs.
+    *   It delegates the event handling to the `KafkaProvisionService`.
 
-1. **Event Listener**: The `NextcloudEventListenerProvider` implements Keycloak's `EventListenerProvider` interface to listen for user registration and tenant creation events. This component is crucial for triggering the provisioning of Nextcloud accounts.
+2.  **`KafkaProvisionService`**:
+    *   This service acts as a bridge between the raw Keycloak event and the `TopicEventWriter`.
+    *   It transforms the event data into a structured format.
+    *   It calls the `TopicEventWriter` to send the structured data to Kafka.
 
-2. **Provisioning Services**:
-   - `NextcloudProvisionService`: Contains the logic for creating Nextcloud accounts based on events received from Keycloak.
-   - `TenantProvisionService`: Manages the creation of Nextcloud accounts for new tenants.
+3.  **`TopicEventWriter`**:
+    *   This class is responsible for the actual communication with Kafka.
+    *   It uses an **Apache Camel** `ProducerTemplate` to send messages.
+    *   The Kafka endpoint (brokers and topic) is configured dynamically based on the settings provided to the factory.
 
-3. **API Clients**:
-   - `KeycloakAdminClient`: Provides methods for interacting with the Keycloak Admin API, allowing for user and tenant management.
-   - `NextcloudClient`: Facilitates communication with the Nextcloud API for user account creation and management.
+4.  **`KafkaEventListenerProviderFactory`**:
+    *   This factory class is responsible for creating and initializing the event listener.
+    *   It implements Keycloak's `EventListenerProviderFactory` interface, which allows Keycloak to discover and load the provider.
+    *   The `init` method reads the Kafka configuration (brokers, topic) from the Keycloak environment.
+    *   It instantiates and manages the lifecycle of the `TopicEventWriter`.
 
-4. **Configuration**: The `ProvisionerConfig` class holds configuration settings specific to the provisioning service, ensuring that the application can be easily configured for different environments.
+5.  **Configuration (`ProvisionerConfig.kt`)**:
+    *   A simple data class that holds the configuration for the provider, such as Kafka broker URLs and topic names.
 
-5. **Logging**: The `Logging` utility provides centralized logging functionality, making it easier to track events and errors throughout the application.
+## Event Flow
 
-## Workflow
+The data flows through the system as follows:
 
-1. **User Registration**: When a user registers in Keycloak, the `NextcloudEventListenerProvider` captures the event and invokes the `NextcloudProvisionService` to create a corresponding Nextcloud account.
+1.  An action occurs in Keycloak (e.g., a new user registers).
+2.  Keycloak's event system fires an `Event`.
+3.  The `KafkaEventListenerProvider` receives the `Event`.
+4.  The provider calls the `KafkaProvisionService`, passing the relevant event details (e.g., user ID, realm ID).
+5.  The `KafkaProvisionService` creates a data object and passes it to the `TopicEventWriter`.
+6.  The `TopicEventWriter` serializes the data object to JSON and uses its Camel producer to send the message to the configured Kafka topic.
 
-2. **Tenant Creation**: Similarly, when a new tenant is created in Keycloak, the `TenantProvisionService` is triggered to provision the necessary Nextcloud accounts for that tenant.
+## Deployment Model
 
-3. **Configuration Management**: The application reads configuration settings from `application.conf`, allowing for flexible deployment across different environments.
+*   The project is built into a single JAR file using `mvn clean package`.
+*   This JAR is then deployed to a Keycloak instance by placing it in the `/opt/keycloak/providers/` directory.
+*   Keycloak automatically detects the provider via the `META-INF/services/org.keycloak.events.EventListenerProviderFactory` service file.
+*   The provider is then enabled and configured in the Keycloak Admin Console for a specific realm.
 
-This architecture ensures a clean separation of concerns, with distinct modules handling specific functionalities, making the project maintainable and scalable.
+This architecture ensures a clean separation of concerns and creates a loosely coupled bridge between Keycloak and a Kafka-based event-driven architecture.

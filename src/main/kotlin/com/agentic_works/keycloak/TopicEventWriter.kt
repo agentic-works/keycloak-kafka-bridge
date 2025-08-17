@@ -1,7 +1,7 @@
 package com.agentic_works.keycloak
 
 import com.agentic_works.keycloak.config.ProvisionerConfig
-import com.agentic_works.keycloak.model.NextcloudUserRequest
+import com.agentic_works.keycloak.model.UserProvisioningEvent
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.camel.CamelContext
 import org.apache.camel.impl.DefaultCamelContext
@@ -19,7 +19,7 @@ class TopicEventWriter(private val config: ProvisionerConfig) {
         camelContext.stop()
     }
 
-    fun writeEvent(userRequest: NextcloudUserRequest) {
+    fun writeEvent(userRequest: UserProvisioningEvent) {
         val producer = camelContext.createProducerTemplate()
         val jsonBody = objectMapper.writeValueAsString(userRequest)
         producer.sendBody("kafka:${config.kafkaTopic}?brokers=${config.kafkaBrokers}", jsonBody)
