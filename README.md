@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Keycloak Nextcloud Provisioner
 
 This project implements a Keycloak EventListenerProvider to listen for user registration and tenant creation events, automatically provisioning Nextcloud accounts for each new user and tenant.
@@ -56,3 +57,7 @@ This project is licensed under the MIT License. See the LICENSE file for more de
 ## Documentation
 
 For more detailed information on the architecture and API interactions, refer to the documentation in the `docs/` directory.
+=======
+# keycloak-kafka-bridge
+A Keycloak Event Listener provider, built with Kotlin and Maven, that forwards events to a Kafka topic using Apache Camel.
+>>>>>>> origin/main
